@@ -48,7 +48,7 @@ public sealed class AudioPipelineProgressTests
             using RouterAiClient client = new("test-key", httpClient, new Uri("https://example.test/v1"));
             AudioPipeline pipeline = new(client, @"C:\ffmpeg\ffmpeg.exe");
             List<PipelineProgress> events = new();
-            Progress<PipelineProgress> progress = new(events.Add);
+            SyncProgress progress = new(events.Add);
 
             IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFilesAsync(new[] { audio }, progress: progress);
 
@@ -76,7 +76,7 @@ public sealed class AudioPipelineProgressTests
             using RouterAiClient client = new("test-key", httpClient, new Uri("https://example.test/v1"));
             AudioPipeline pipeline = new(client, @"C:\ffmpeg\ffmpeg.exe");
             List<PipelineStage> stages = new();
-            Progress<PipelineProgress> progress = new(p => stages.Add(p.Stage));
+            SyncProgress progress = new(p => stages.Add(p.Stage));
 
             IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFilesAsync(new[] { audio }, progress: progress);
 
@@ -111,7 +111,7 @@ public sealed class AudioPipelineProgressTests
             using RouterAiClient client = new("test-key", httpClient, new Uri("https://example.test/v1"));
             AudioPipeline pipeline = new(client, @"C:\ffmpeg\ffmpeg.exe");
             List<PipelineProgress> events = new();
-            Progress<PipelineProgress> progress = new(events.Add);
+            SyncProgress progress = new(events.Add);
 
             IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFilesAsync(new[] { bad, good }, progress: progress);
 
@@ -130,6 +130,18 @@ public sealed class AudioPipelineProgressTests
         string path = Path.Combine(Path.GetTempPath(), $"audioparsing-progress-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private sealed class SyncProgress : IProgress<PipelineProgress>
+    {
+        private readonly Action<PipelineProgress> _onReport;
+
+        public SyncProgress(Action<PipelineProgress> onReport)
+        {
+            _onReport = onReport ?? throw new ArgumentNullException(nameof(onReport));
+        }
+
+        public void Report(PipelineProgress value) => _onReport(value);
     }
 
     private sealed class CountingHandler : HttpMessageHandler

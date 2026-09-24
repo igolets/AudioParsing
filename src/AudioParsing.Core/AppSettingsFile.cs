@@ -3,6 +3,36 @@ using System.Text.Json;
 namespace AudioParsing;
 
 /// <summary>
+/// GigaAM-v3 ONNX model layout for the local transcription backend.
+/// Defaults match the transducer (encoder/decoder/joiner + tokens) file set.
+/// </summary>
+public sealed class GigaAmSettings
+{
+    public string ModelPath { get; set; } = "models/gigaam-v3";
+
+    public string EncoderFileName { get; set; } = "gigaam_v3_e2e_rnnt_encoder.onnx";
+
+    public string DecoderFileName { get; set; } = "gigaam_v3_e2e_rnnt_decoder.onnx";
+
+    public string JoinerFileName { get; set; } = "gigaam_v3_e2e_rnnt_joint.onnx";
+
+    public string TokensFileName { get; set; } = "gigaam_v3_e2e_rnnt_tokens.txt";
+}
+
+/// <summary>
+/// GigaChat GGUF model layout for the local summarization backend.
+/// Defaults point at the official MIT-licensed quant next to the executable.
+/// </summary>
+public sealed class GigaChatSettings
+{
+    public string GgufPath { get; set; } = "models/GigaChat3.1-10B-A1.8B-q4_K_M.gguf";
+
+    public int ContextSize { get; set; } = 16384;
+
+    public int GpuLayerCount { get; set; }
+}
+
+/// <summary>
 /// Editable settings model bound to appsettings.json.
 /// Defaults mirror the console fallbacks so a missing file behaves identically.
 /// </summary>
@@ -13,6 +43,16 @@ public sealed class AppSettingsModel
     public string TranscriptionModel { get; set; } = AudioPipeline.DefaultModel;
 
     public string SummaryModel { get; set; } = AudioPipeline.DefaultSummaryModel;
+
+    public string TranscriptionBackend { get; set; } = "External";
+
+    public string SummaryBackend { get; set; } = "External";
+
+    public string Language { get; set; } = "ru";
+
+    public GigaAmSettings GigaAm { get; set; } = new();
+
+    public GigaChatSettings GigaChat { get; set; } = new();
 }
 
 /// <summary>
@@ -67,6 +107,11 @@ public static class AppSettingsFile
                 FfmpegPath = GetString(root, "FfmpegPath", AppSettings.DefaultFfmpegPath),
                 TranscriptionModel = GetString(root, "TranscriptionModel", AudioPipeline.DefaultModel),
                 SummaryModel = GetString(root, "SummaryModel", AudioPipeline.DefaultSummaryModel),
+                TranscriptionBackend = GetString(root, "TranscriptionBackend", "External"),
+                SummaryBackend = GetString(root, "SummaryBackend", "External"),
+                Language = GetString(root, "Language", "ru"),
+                GigaAm = GetGigaAm(root),
+                GigaChat = GetGigaChat(root),
             };
         }
         catch (JsonException)
@@ -113,6 +158,25 @@ public static class AppSettingsFile
         }
     }
 
+    private static GigaAmSettings GetGigaAm(JsonElement root)
+    {
+        GigaAmSettings defaults = new();
+        if (!root.TryGetProperty("GigaAm", out JsonElement element)
+            || element.ValueKind != JsonValueKind.Object)
+        {
+            return defaults;
+        }
+
+        return new GigaAmSettings
+        {
+            ModelPath = GetString(element, "ModelPath", defaults.ModelPath),
+            EncoderFileName = GetString(element, "EncoderFileName", defaults.EncoderFileName),
+            DecoderFileName = GetString(element, "DecoderFileName", defaults.DecoderFileName),
+            JoinerFileName = GetString(element, "JoinerFileName", defaults.JoinerFileName),
+            TokensFileName = GetString(element, "TokensFileName", defaults.TokensFileName),
+        };
+    }
+
     private static string GetString(JsonElement root, string property, string defaultValue)
     {
         if (root.TryGetProperty(property, out JsonElement element)
@@ -123,6 +187,35 @@ public static class AppSettingsFile
             {
                 return configured;
             }
+        }
+
+        return defaultValue;
+    }
+
+    private static GigaChatSettings GetGigaChat(JsonElement root)
+    {
+        GigaChatSettings defaults = new();
+        if (!root.TryGetProperty("GigaChat", out JsonElement element)
+            || element.ValueKind != JsonValueKind.Object)
+        {
+            return defaults;
+        }
+
+        return new GigaChatSettings
+        {
+            GgufPath = GetString(element, "GgufPath", defaults.GgufPath),
+            ContextSize = GetInt(element, "ContextSize", defaults.ContextSize),
+            GpuLayerCount = GetInt(element, "GpuLayerCount", defaults.GpuLayerCount),
+        };
+    }
+
+    private static int GetInt(JsonElement root, string property, int defaultValue)
+    {
+        if (root.TryGetProperty(property, out JsonElement element)
+            && element.ValueKind == JsonValueKind.Number
+            && element.TryGetInt32(out int configured))
+        {
+            return configured;
         }
 
         return defaultValue;

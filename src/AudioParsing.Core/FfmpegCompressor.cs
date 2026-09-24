@@ -26,6 +26,24 @@ public static class FfmpegCompressor
         return $"-y -i \"{inputPath}\" -vn -ac 1 -ar 16000 -b:a 32k \"{outputPath}\"";
     }
 
+    /// <summary>
+    /// Builds ffmpeg arguments that convert/extract to 16 kHz mono 16-bit PCM WAV (for GigaAM).
+    /// </summary>
+    public static string BuildPcmWavArguments(string inputPath, string outputPath)
+    {
+        if (string.IsNullOrWhiteSpace(inputPath))
+        {
+            throw new ArgumentException("Input path must not be empty.", nameof(inputPath));
+        }
+
+        if (string.IsNullOrWhiteSpace(outputPath))
+        {
+            throw new ArgumentException("Output path must not be empty.", nameof(outputPath));
+        }
+
+        return $"-y -i \"{inputPath}\" -vn -ac 1 -ar 16000 -c:a pcm_s16le \"{outputPath}\"";
+    }
+
     public static bool NeedsCompression(long fileSizeBytes, long maxBytes) => fileSizeBytes > maxBytes;
 
     /// <summary>
@@ -38,11 +56,29 @@ public static class FfmpegCompressor
     /// <summary>
     /// Runs ffmpeg to compress <paramref name="inputPath"/> into <paramref name="outputPath"/>.
     /// </summary>
-    public static async Task CompressAsync(
+    public static Task CompressAsync(
         string ffmpegPath,
         string inputPath,
         string outputPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        RunAsync(ffmpegPath, inputPath, outputPath, BuildArguments(inputPath, outputPath), cancellationToken);
+
+    /// <summary>
+    /// Runs ffmpeg with <see cref="BuildPcmWavArguments"/>.
+    /// </summary>
+    public static Task ExtractPcmWavAsync(
+        string ffmpegPath,
+        string inputPath,
+        string outputPath,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(ffmpegPath, inputPath, outputPath, BuildPcmWavArguments(inputPath, outputPath), cancellationToken);
+
+    private static async Task RunAsync(
+        string ffmpegPath,
+        string inputPath,
+        string outputPath,
+        string arguments,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(ffmpegPath))
         {
@@ -59,7 +95,7 @@ public static class FfmpegCompressor
             throw new FileNotFoundException($"Input audio file not found: {inputPath}", inputPath);
         }
 
-        ProcessStartInfo startInfo = new(ffmpegPath, BuildArguments(inputPath, outputPath))
+        ProcessStartInfo startInfo = new(ffmpegPath, arguments)
         {
             UseShellExecute = false,
             RedirectStandardError = true,

@@ -15,5 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\AudioParsing.Core\AudioParsing.Core.csproj" />
+    <ProjectReference Include="..\..\src\AudioParsing.LocalStt\AudioParsing.LocalStt.csproj" />
+    <ProjectReference Include="..\..\src\AudioParsing.LocalSummary\AudioParsing.LocalSummary.csproj" />
   </ItemGroup>
 </Project>

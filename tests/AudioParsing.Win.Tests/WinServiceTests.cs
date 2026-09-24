@@ -244,6 +244,238 @@ public sealed class PipelineRunnerTests
         return path;
     }
 
+    [Fact]
+    public async Task ProcessAsyncSelectsLocalSummaryBackend()
+    {
+        FakeSettingsStore store = new(new AppSettingsModel
+        {
+            FfmpegPath = @"C:\ffmpeg\ffmpeg.exe",
+            SummaryBackend = "Local",
+            GigaChat = new GigaChatSettings
+            {
+                GgufPath = Path.Combine(Path.GetTempPath(), $"no-such-model-{Guid.NewGuid():N}.gguf"),
+            },
+        });
+        using StubHandler stub = new();
+        using HttpClient httpClient = new(stub);
+        Uri baseUri = new("https://example.test/v1");
+        PipelineRunner runner = new(
+            store,
+            new FakeApiKeyProvider("test-key"),
+            key => new RouterAiClient(key, httpClient, baseUri));
+        string[] files = new[] { @"C:\audio\a.mp3" };
+
+        InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runner.ProcessAsync(files, null, CancellationToken.None));
+
+        Assert.Contains("GigaChat", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, stub.TranscriptionCallCount);
+        Assert.Equal(0, stub.ChatCallCount);
+    }
+
+    [Fact]
+    public async Task ProcessAsyncRunsFullyLocalWithoutApiKey()
+    {
+        string root = CreateTempDirectory();
+        string modelDir = Path.Combine(Path.GetTempPath(), $"gigaam-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelDir);
+        string gguf = Path.Combine(Path.GetTempPath(), $"gigachat-{Guid.NewGuid():N}.gguf");
+        try
+        {
+            foreach (string file in new[] { "gigaam_v3_e2e_rnnt_encoder.onnx", "gigaam_v3_e2e_rnnt_decoder.onnx", "gigaam_v3_e2e_rnnt_joint.onnx", "gigaam_v3_e2e_rnnt_tokens.txt" })
+            {
+                await File.WriteAllTextAsync(Path.Combine(modelDir, file), "dummy");
+            }
+
+            await File.WriteAllTextAsync(gguf, "dummy");
+            string audio = Path.Combine(root, "a.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            using StubHandler handler = new();
+            using HttpClient httpClient = new(handler);
+            Uri baseUri = new("https://example.test/v1");
+            FakeSettingsStore store = new(new AppSettingsModel
+            {
+                FfmpegPath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.exe"),
+                TranscriptionBackend = "Local",
+                SummaryBackend = "Local",
+                GigaAm = new GigaAmSettings { ModelPath = modelDir },
+                GigaChat = new GigaChatSettings { GgufPath = gguf },
+            });
+            PipelineRunner runner = new(
+                store,
+                new FakeApiKeyProvider(null),
+                key => new RouterAiClient(key, httpClient, baseUri));
+            string[] files = new[] { audio };
+
+            IReadOnlyList<AudioFileResult> results = await runner.ProcessAsync(files, null, CancellationToken.None);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.False(single.Success);
+            Assert.Contains("ffmpeg", single.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(0, handler.TranscriptionCallCount);
+            Assert.Equal(0, handler.ChatCallCount);
+            Assert.False(File.Exists(Path.ChangeExtension(audio, ".md")));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+            Directory.Delete(modelDir, true);
+            File.Delete(gguf);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsyncThrowsWithoutKeyWhenSummaryIsExternal()
+    {
+        string modelDir = Path.Combine(Path.GetTempPath(), $"gigaam-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelDir);
+        try
+        {
+            foreach (string file in new[] { "gigaam_v3_e2e_rnnt_encoder.onnx", "gigaam_v3_e2e_rnnt_decoder.onnx", "gigaam_v3_e2e_rnnt_joint.onnx", "gigaam_v3_e2e_rnnt_tokens.txt" })
+            {
+                await File.WriteAllTextAsync(Path.Combine(modelDir, file), "dummy");
+            }
+
+            FakeSettingsStore store = new(new AppSettingsModel
+            {
+                FfmpegPath = @"C:\ffmpeg\ffmpeg.exe",
+                TranscriptionBackend = "Local",
+                SummaryBackend = "External",
+                GigaAm = new GigaAmSettings { ModelPath = modelDir },
+            });
+            using StubHandler stub = new();
+            using HttpClient httpClient = new(stub);
+            Uri baseUri = new("https://example.test/v1");
+            PipelineRunner runner = new(
+                store,
+                new FakeApiKeyProvider(null),
+                key => new RouterAiClient(key, httpClient, baseUri));
+            string[] files = new[] { @"C:\audio\a.mp3" };
+
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => runner.ProcessAsync(files, null, CancellationToken.None));
+
+            Assert.Contains(EnvApiKeyProvider.EnvVarName, ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(modelDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsyncThrowsWithoutKeyWhenTranscriptionIsExternal()
+    {
+        string gguf = Path.Combine(Path.GetTempPath(), $"gigachat-{Guid.NewGuid():N}.gguf");
+        try
+        {
+            await File.WriteAllTextAsync(gguf, "dummy");
+            FakeSettingsStore store = new(new AppSettingsModel
+            {
+                FfmpegPath = @"C:\ffmpeg\ffmpeg.exe",
+                TranscriptionBackend = "External",
+                SummaryBackend = "Local",
+                GigaChat = new GigaChatSettings { GgufPath = gguf },
+            });
+            using StubHandler stub = new();
+            using HttpClient httpClient = new(stub);
+            Uri baseUri = new("https://example.test/v1");
+            PipelineRunner runner = new(
+                store,
+                new FakeApiKeyProvider(null),
+                key => new RouterAiClient(key, httpClient, baseUri));
+            string[] files = new[] { @"C:\audio\a.mp3" };
+
+            InvalidOperationException ex = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => runner.ProcessAsync(files, null, CancellationToken.None));
+
+            Assert.Contains(EnvApiKeyProvider.EnvVarName, ex.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(gguf);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsyncUsesLocalBackendPreprocessingWithoutExternalTranscription()
+    {
+        string root = CreateTempDirectory();
+        string modelDir = Path.Combine(Path.GetTempPath(), $"gigaam-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(modelDir);
+        try
+        {
+            foreach (string file in new[] { "gigaam_v3_e2e_rnnt_encoder.onnx", "gigaam_v3_e2e_rnnt_decoder.onnx", "gigaam_v3_e2e_rnnt_joint.onnx", "gigaam_v3_e2e_rnnt_tokens.txt" })
+            {
+                await File.WriteAllTextAsync(Path.Combine(modelDir, file), "dummy");
+            }
+
+            string audio = Path.Combine(root, "a.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            using StubHandler handler = new();
+            using HttpClient httpClient = new(handler);
+            Uri baseUri = new("https://example.test/v1");
+            FakeSettingsStore store = new(new AppSettingsModel
+            {
+                FfmpegPath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.exe"),
+                TranscriptionBackend = "Local",
+                GigaAm = new GigaAmSettings { ModelPath = modelDir },
+            });
+            PipelineRunner runner = new(
+                store,
+                new FakeApiKeyProvider("test-key"),
+                key => new RouterAiClient(key, httpClient, baseUri));
+            string[] files = new[] { audio };
+
+            IReadOnlyList<AudioFileResult> results = await runner.ProcessAsync(files, null, CancellationToken.None);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.False(single.Success);
+            Assert.Contains("ffmpeg", single.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(0, handler.TranscriptionCallCount);
+            Assert.False(File.Exists(Path.ChangeExtension(audio, ".md")));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+            Directory.Delete(modelDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessAsyncOmitsLanguageWhenAuto()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "a.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            using StubHandler handler = new();
+            using HttpClient httpClient = new(handler);
+            Uri baseUri = new("https://example.test/v1");
+            FakeSettingsStore store = new(new AppSettingsModel
+            {
+                FfmpegPath = @"C:\ffmpeg\ffmpeg.exe",
+                Language = "auto",
+            });
+            PipelineRunner runner = new(
+                store,
+                new FakeApiKeyProvider("test-key"),
+                key => new RouterAiClient(key, httpClient, baseUri));
+            string[] files = new[] { audio };
+
+            IReadOnlyList<AudioFileResult> results = await runner.ProcessAsync(files, null, CancellationToken.None);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.True(single.Success);
+            Assert.DoesNotContain("language", handler.LastTranscriptionBody, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static async Task WaitForProgressAsync(Func<bool> ready)
     {
         for (int i = 0; i < 200 && !ready(); i++)
@@ -256,6 +488,10 @@ public sealed class PipelineRunnerTests
     {
         public string LastTranscriptionBody { get; private set; } = string.Empty;
 
+        public int TranscriptionCallCount { get; private set; }
+
+        public int ChatCallCount { get; private set; }
+
         public bool FailTranscription { get; set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -263,6 +499,7 @@ public sealed class PipelineRunnerTests
             string url = request.RequestUri!.ToString();
             if (url.Contains("/audio/transcriptions", StringComparison.Ordinal))
             {
+                TranscriptionCallCount++;
                 if (request.Content is not null)
                 {
                     LastTranscriptionBody = await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(true);
@@ -282,6 +519,7 @@ public sealed class PipelineRunnerTests
                 };
             }
 
+            ChatCallCount++;
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{\"choices\":[{\"message\":{\"content\":\"Summary line\\nKeywords: alpha\"}}]}"),

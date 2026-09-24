@@ -41,4 +41,26 @@ public sealed class FfmpegCompressorTests
             Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.exe"),
             "input.mp3",
             "output.mp3"));
+
+    [Fact]
+    public void BuildPcmWavArgumentsProduces16kHzMonoPcmWav()
+    {
+        string args = FfmpegCompressor.BuildPcmWavArguments(@"C:\in\record.m4a", @"C:\out\record.wav");
+
+        Assert.Contains("-y", args, StringComparison.Ordinal);
+        Assert.Contains("-vn", args, StringComparison.Ordinal);
+        Assert.Contains("-ac 1", args, StringComparison.Ordinal);
+        Assert.Contains("-ar 16000", args, StringComparison.Ordinal);
+        Assert.Contains("pcm_s16le", args, StringComparison.Ordinal);
+        Assert.DoesNotContain("-b:a", args, StringComparison.Ordinal);
+        Assert.Contains(@"C:\in\record.m4a", args, StringComparison.Ordinal);
+        Assert.Contains(@"C:\out\record.wav", args, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ExtractPcmWavAsyncThrowsWhenFfmpegIsMissing() => await Assert.ThrowsAsync<FileNotFoundException>(
+        () => FfmpegCompressor.ExtractPcmWavAsync(
+            Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.exe"),
+            "input.mp3",
+            "output.wav"));
 }

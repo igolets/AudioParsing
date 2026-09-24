@@ -254,6 +254,126 @@ public sealed class AudioPipelineTests
         }
     }
 
+    [Fact]
+    public async Task ProcessFolderWithLocalBackendReportsFailureWhenFfmpegIsMissing()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "f.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            using CountingHandler handler = new();
+            using HttpClient httpClient = new(handler);
+            using RouterAiClient client = new("test-key", httpClient, new Uri("https://example.test/v1"));
+            FakeTranscriber transcriber = new();
+            AudioPipeline pipeline = new(
+                client,
+                transcriber,
+                TranscriptionBackend.Local,
+                Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.exe"));
+
+            IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFolderAsync(root);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.False(single.Success);
+            Assert.NotNull(single.Error);
+            Assert.Contains("ffmpeg", single.Error, StringComparison.OrdinalIgnoreCase);
+            Assert.Equal(0, transcriber.CallCount);
+            Assert.Equal(0, handler.ChatCallCount);
+            Assert.False(File.Exists(Path.ChangeExtension(audio, ".md")));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessFolderWithLocalBackendTranscribesNormalizedWav()
+    {
+        string? ffmpegPath = ResolveFfmpegPath();
+        if (ffmpegPath is null)
+        {
+            return;
+        }
+
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "local.wav");
+            RunFfmpeg(
+                ffmpegPath,
+                $"-y -f lavfi -i \"sine=f=440:d=1\" -c:a pcm_s16le \"{audio}\"");
+            using CountingHandler handler = new();
+            using HttpClient httpClient = new(handler);
+            using RouterAiClient client = new("test-key", httpClient, new Uri("https://example.test/v1"));
+            FakeTranscriber transcriber = new();
+            AudioPipeline pipeline = new(
+                client,
+                transcriber,
+                TranscriptionBackend.Local,
+                ffmpegPath);
+            SyncProgress progress = new();
+
+            IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFolderAsync(root, progress: progress);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.True(single.Success);
+            string wavInput = Assert.Single(transcriber.ReceivedPaths);
+            Assert.Equal(".wav", Path.GetExtension(wavInput));
+            Assert.Contains(PipelineStage.Compressing, progress.Stages);
+            Assert.Contains(PipelineStage.Transcribing, progress.Stages);
+            Assert.Contains(PipelineStage.Completed, progress.Stages);
+            string markdown = await File.ReadAllTextAsync(Path.ChangeExtension(audio, ".md"));
+            Assert.Contains("## Краткое содержание", markdown, StringComparison.Ordinal);
+            Assert.Contains("## Полный транскрипт", markdown, StringComparison.Ordinal);
+            Assert.Contains("local transcript", markdown, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task ProcessFolderWithExplicitSummarizerUsesItWithoutHttpClient()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "g.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            FakeTranscriber transcriber = new();
+            FakeSummaryGenerator summarizer = new();
+            AudioPipeline pipeline = new(
+                transcriber,
+                TranscriptionBackend.External,
+                summarizer,
+                SummaryBackend.Local,
+                @"C:\ffmpeg\ffmpeg.exe");
+
+            IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFolderAsync(root);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.False(single.Skipped);
+            Assert.True(single.Success);
+            Assert.Equal(1, transcriber.CallCount);
+            Assert.Equal(1, summarizer.CallCount);
+            Assert.Equal("local transcript", summarizer.ReceivedTranscript);
+            string markdown = await File.ReadAllTextAsync(Path.ChangeExtension(audio, ".md"));
+            Assert.Contains("## Краткое содержание", markdown, StringComparison.Ordinal);
+            Assert.Contains("Local summary text", markdown, StringComparison.Ordinal);
+            Assert.Contains("## Полный транскрипт", markdown, StringComparison.Ordinal);
+            Assert.Contains("local transcript", markdown, StringComparison.Ordinal);
+            Assert.Contains("alpha", markdown, StringComparison.Ordinal);
+            Assert.DoesNotContain("Keywords:", markdown, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static string? ResolveFfmpegPath()
     {
         try
@@ -328,6 +448,54 @@ public sealed class AudioPipelineTests
         string path = Path.Combine(Path.GetTempPath(), $"audioparsing-pipe-{Guid.NewGuid():N}");
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    private sealed class FakeTranscriber : IAudioTranscriber
+    {
+        public string Name => "fake-local";
+
+        public List<string> ReceivedPaths { get; } = new();
+
+        public int CallCount { get; private set; }
+
+        public Task<string> TranscribeAsync(string audioFilePath, string? language, CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(audioFilePath);
+
+            CallCount++;
+            ReceivedPaths.Add(audioFilePath);
+            return Task.FromResult("local transcript");
+        }
+    }
+
+    private sealed class FakeSummaryGenerator : ISummaryGenerator
+    {
+        public string Name => "fake-summary";
+
+        public string? ReceivedTranscript { get; private set; }
+
+        public int CallCount { get; private set; }
+
+        public Task<string> GenerateSummaryAsync(string transcript, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(transcript);
+
+            CallCount++;
+            ReceivedTranscript = transcript;
+            return Task.FromResult("Local summary text\nKeywords: alpha, beta");
+        }
+    }
+
+    private sealed class SyncProgress : IProgress<PipelineProgress>
+    {
+        public List<PipelineStage> Stages { get; } = new();
+
+        public void Report(PipelineProgress value)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+
+            Stages.Add(value.Stage);
+        }
     }
 
     private sealed class CountingHandler : HttpMessageHandler

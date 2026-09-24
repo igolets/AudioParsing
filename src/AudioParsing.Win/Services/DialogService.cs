@@ -70,4 +70,49 @@ public sealed class DialogService : IDialogService
 
         return dialog.ShowDialog(Application.Current?.MainWindow) == true ? dialog.FileName : null;
     }
+
+    public string? ShowOpenFolderDialog(string? initialPath)
+    {
+        Microsoft.Win32.OpenFolderDialog dialog = new()
+        {
+            Title = "Выберите каталог с моделью GigaAM-v3",
+        };
+        if (!string.IsNullOrWhiteSpace(initialPath))
+        {
+            try
+            {
+                if (Directory.Exists(initialPath))
+                {
+                    dialog.InitialDirectory = initialPath;
+                }
+                else
+                {
+                    string? directory = Path.GetDirectoryName(initialPath);
+                    if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+                    {
+                        dialog.InitialDirectory = directory;
+                    }
+                }
+            }
+            catch (ArgumentException)
+            {
+                // Fall through with dialog defaults when the stored path is malformed.
+            }
+        }
+
+        return dialog.ShowDialog(Application.Current?.MainWindow) == true ? dialog.FolderName : null;
+    }
+
+    public bool ShowConfirmation(string message, string caption)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+        ArgumentNullException.ThrowIfNull(caption);
+
+        return MessageBox.Show(
+            Application.Current?.MainWindow,
+            message,
+            caption,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question) == MessageBoxResult.Yes;
+    }
 }

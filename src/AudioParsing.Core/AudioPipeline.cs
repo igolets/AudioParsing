@@ -26,11 +26,11 @@ public sealed class AudioPipeline
 
     public const long MaxUploadBytes = 25L * 1024L * 1024L;
 
-    private readonly RouterAiClient _client;
+    private readonly IAudioTranscriber _transcriber;
+    private readonly TranscriptionBackend _backend;
+    private readonly ISummaryGenerator _summarizer;
     private readonly string _ffmpegPath;
-    private readonly string _model;
     private readonly string? _language;
-    private readonly string _summaryModel;
 
     public AudioPipeline(
         RouterAiClient client,
@@ -38,27 +38,49 @@ public sealed class AudioPipeline
         string model = DefaultModel,
         string? language = DefaultLanguage,
         string summaryModel = DefaultSummaryModel)
+        : this(client, new RouterAiTranscriber(client, model), TranscriptionBackend.External, ffmpegPath, language, summaryModel)
     {
-        _client = client ?? throw new ArgumentNullException(nameof(client));
+    }
+
+    /// <summary>
+    /// Backend-agnostic constructor. The pipeline keeps owning stage ordering, error mapping
+    /// and results; <paramref name="transcriber"/> only swaps how the transcript is produced.
+    /// </summary>
+    public AudioPipeline(
+        RouterAiClient client,
+        IAudioTranscriber transcriber,
+        TranscriptionBackend backend,
+        string ffmpegPath,
+        string? language = DefaultLanguage,
+        string summaryModel = DefaultSummaryModel)
+        : this(transcriber, backend, new RouterAiSummaryGenerator(client, summaryModel), SummaryBackend.External, ffmpegPath, language)
+    {
+    }
+
+    /// <summary>
+    /// Fully backend-agnostic constructor. Both stages are explicit; no
+    /// <see cref="RouterAiClient"/> is needed when neither stage is external.
+    /// <paramref name="summaryBackend"/> selects which summarizer <paramref name="summarizer"/>
+    /// implements; the pipeline itself only drives stage ordering and results.
+    /// </summary>
+    public AudioPipeline(
+        IAudioTranscriber transcriber,
+        TranscriptionBackend backend,
+        ISummaryGenerator summarizer,
+        SummaryBackend summaryBackend,
+        string ffmpegPath,
+        string? language = DefaultLanguage)
+    {
+        _transcriber = transcriber ?? throw new ArgumentNullException(nameof(transcriber));
+        _summarizer = summarizer ?? throw new ArgumentNullException(nameof(summarizer));
         if (string.IsNullOrWhiteSpace(ffmpegPath))
         {
             throw new ArgumentException("ffmpeg path must not be empty.", nameof(ffmpegPath));
         }
 
-        if (string.IsNullOrWhiteSpace(model))
-        {
-            throw new ArgumentException("Model must not be empty.", nameof(model));
-        }
-
-        if (string.IsNullOrWhiteSpace(summaryModel))
-        {
-            throw new ArgumentException("Summary model must not be empty.", nameof(summaryModel));
-        }
-
+        _backend = backend;
         _ffmpegPath = ffmpegPath;
-        _model = model;
         _language = language;
-        _summaryModel = summaryModel;
     }
 
     /// <summary>
@@ -120,23 +142,39 @@ public sealed class AudioPipeline
         try
         {
             FileInfo info = new(audioPath);
-            if (FfmpegCompressor.RequiresAudioExtraction(audioPath, info.Length, MaxUploadBytes))
+            bool pcmWav = _backend == TranscriptionBackend.Local;
+            bool preprocess = pcmWav
+                || FfmpegCompressor.RequiresAudioExtraction(audioPath, info.Length, MaxUploadBytes);
+
+            if (preprocess)
             {
-                progress?.Report(new PipelineProgress(audioPath, PipelineStage.Compressing, "Compressing with ffmpeg."));
-                extractedPath = Path.Combine(Path.GetTempPath(), $"audioparsing-{Guid.NewGuid():N}.mp3");
-                await FfmpegCompressor
-                    .CompressAsync(_ffmpegPath, audioPath, extractedPath, cancellationToken)
-                    .ConfigureAwait(false);
+                string ext = pcmWav ? ".wav" : ".mp3";
+                progress?.Report(new PipelineProgress(audioPath, PipelineStage.Compressing,
+                    pcmWav ? "Preparing 16 kHz WAV for GigaAM." : "Compressing with ffmpeg."));
+                extractedPath = Path.Combine(Path.GetTempPath(), $"audioparsing-{Guid.NewGuid():N}{ext}");
+                if (pcmWav)
+                {
+                    await FfmpegCompressor
+                        .ExtractPcmWavAsync(_ffmpegPath, audioPath, extractedPath, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await FfmpegCompressor
+                        .CompressAsync(_ffmpegPath, audioPath, extractedPath, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 transcriptionInput = extractedPath;
             }
 
-            progress?.Report(new PipelineProgress(audioPath, PipelineStage.Transcribing, $"Transcribing with {_model}."));
-            string transcript = await _client
-                .TranscribeAsync(transcriptionInput, _model, _language, cancellationToken)
+            progress?.Report(new PipelineProgress(audioPath, PipelineStage.Transcribing, $"Transcribing with {_transcriber.Name}."));
+            string transcript = await _transcriber
+                .TranscribeAsync(transcriptionInput, _language, cancellationToken)
                 .ConfigureAwait(false);
-            progress?.Report(new PipelineProgress(audioPath, PipelineStage.Summarizing, $"Summarizing with {_summaryModel}."));
-            string summaryResponse = await _client
-                .GenerateSummaryAsync(transcript, _summaryModel, cancellationToken)
+            progress?.Report(new PipelineProgress(audioPath, PipelineStage.Summarizing, $"Summarizing with {_summarizer.Name}."));
+            string summaryResponse = await _summarizer
+                .GenerateSummaryAsync(transcript, cancellationToken)
                 .ConfigureAwait(false);
             (string summary, IReadOnlyList<string> keywords) =
                 MarkdownDocument.SplitSummaryAndKeywords(summaryResponse);

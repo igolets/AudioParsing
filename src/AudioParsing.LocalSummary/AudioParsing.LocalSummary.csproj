@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>AudioParsing.LocalSummary</RootNamespace>
+    <AssemblyName>AudioParsing.LocalSummary</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="LLamaSharp" Version="0.27.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.27.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AudioParsing.Core\AudioParsing.Core.csproj" />
+  </ItemGroup>
+</Project>

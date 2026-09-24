@@ -29,4 +29,67 @@ public static class AppSettings
     /// </summary>
     public static string GetSummaryModel(string? settingsFilePath = null) =>
         AppSettingsFile.Load(settingsFilePath).SummaryModel;
+
+    /// <summary>
+    /// Returns the configured transcription backend, falling back to
+    /// <see cref="TranscriptionBackend.External"/> for missing or unknown values (case-insensitive).
+    /// </summary>
+    public static TranscriptionBackend GetTranscriptionBackend(string? settingsFilePath = null) =>
+        ParseTranscriptionBackend(AppSettingsFile.Load(settingsFilePath).TranscriptionBackend);
+
+    /// <summary>
+    /// Parses a backend name case-insensitively; unknown values fall back to
+    /// <see cref="TranscriptionBackend.External"/>.
+    /// </summary>
+    public static TranscriptionBackend ParseTranscriptionBackend(string? value) =>
+        string.Equals(value, "Local", StringComparison.OrdinalIgnoreCase)
+            ? TranscriptionBackend.Local
+            : TranscriptionBackend.External;
+
+    /// <summary>
+    /// Returns the configured summarization backend, falling back to
+    /// <see cref="SummaryBackend.External"/> for missing or unknown values (case-insensitive).
+    /// </summary>
+    public static SummaryBackend GetSummaryBackend(string? settingsFilePath = null) =>
+        ParseSummaryBackend(AppSettingsFile.Load(settingsFilePath).SummaryBackend);
+
+    /// <summary>
+    /// Parses a summary backend name case-insensitively; unknown values fall back to
+    /// <see cref="SummaryBackend.External"/>.
+    /// </summary>
+    public static SummaryBackend ParseSummaryBackend(string? value) =>
+        string.Equals(value, "Local", StringComparison.OrdinalIgnoreCase)
+            ? SummaryBackend.Local
+            : SummaryBackend.External;
+
+    /// <summary>
+    /// Returns the configured spoken language, or null when set to "auto" (parameter omitted).
+    /// Falls back to <see cref="AudioPipeline.DefaultLanguage"/> when the settings file or
+    /// the property is missing.
+    /// </summary>
+    public static string? GetLanguage(string? settingsFilePath = null)
+    {
+        string language = AppSettingsFile.Load(settingsFilePath).Language;
+        if (string.IsNullOrWhiteSpace(language)
+            || language.Equals("auto", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return language;
+    }
+
+    /// <summary>
+    /// Returns the configured GigaAM-v3 model layout for the local backend,
+    /// falling back to <see cref="GigaAmSettings"/> defaults when missing.
+    /// </summary>
+    public static GigaAmSettings GetGigaAmSettings(string? settingsFilePath = null) =>
+        AppSettingsFile.Load(settingsFilePath).GigaAm;
+
+    /// <summary>
+    /// Returns the configured GigaChat GGUF layout for the local summarization backend,
+    /// falling back to <see cref="GigaChatSettings"/> defaults when missing.
+    /// </summary>
+    public static GigaChatSettings GetGigaChatSettings(string? settingsFilePath = null) =>
+        AppSettingsFile.Load(settingsFilePath).GigaChat;
 }

@@ -1,3 +1,6 @@
+using AudioParsing.LocalStt;
+using AudioParsing.LocalSummary;
+
 namespace AudioParsing.Win.Services;
 
 /// <summary>
@@ -34,20 +37,35 @@ public sealed class PipelineRunner : IPipelineRunner
         ArgumentNullException.ThrowIfNull(files);
 
         AppSettingsModel settings = _settings.Load();
+        TranscriptionBackend backend = AppSettings.ParseTranscriptionBackend(settings.TranscriptionBackend);
+        SummaryBackend summary = AppSettings.ParseSummaryBackend(settings.SummaryBackend);
+        bool needsKey = backend == TranscriptionBackend.External || summary == SummaryBackend.External;
         string? key = _apiKey.GetApiKey();
-        if (string.IsNullOrWhiteSpace(key))
+        if (needsKey && string.IsNullOrWhiteSpace(key))
         {
             throw new InvalidOperationException(
                 $"Не задан ключ API. Задайте переменную среды {EnvApiKeyProvider.EnvVarName}.");
         }
 
-        using RouterAiClient client = _clientFactory(key);
-        AudioPipeline pipeline = new(
-            client,
-            settings.FfmpegPath,
-            settings.TranscriptionModel,
-            AudioPipeline.DefaultLanguage,
-            settings.SummaryModel);
+        string? language = string.IsNullOrWhiteSpace(settings.Language)
+            || settings.Language.Equals("auto", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : settings.Language;
+
+        using RouterAiClient? client = needsKey ? _clientFactory(key!) : null;
+        using GigaAmTranscriber? localTranscriber = backend == TranscriptionBackend.Local
+            ? new GigaAmTranscriber(settings.GigaAm)
+            : null;
+        using GigaChatSummaryGenerator? localSummary = summary == SummaryBackend.Local
+            ? new GigaChatSummaryGenerator(settings.GigaChat)
+            : null;
+        IAudioTranscriber transcriber = localTranscriber is not null
+            ? localTranscriber
+            : new RouterAiTranscriber(client!, settings.TranscriptionModel);
+        ISummaryGenerator summarizer = localSummary is not null
+            ? new ChunkingSummaryGenerator(localSummary, settings.GigaChat.ContextSize, reservedOutputTokens: 2048)
+            : new RouterAiSummaryGenerator(client!, settings.SummaryModel);
+        AudioPipeline pipeline = new(transcriber, backend, summarizer, summary, settings.FfmpegPath, language);
         return await pipeline
             .ProcessFilesAsync(files, force: false, progress, cancellationToken)
             .ConfigureAwait(false);

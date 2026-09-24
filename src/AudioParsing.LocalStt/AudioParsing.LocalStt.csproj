@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>AudioParsing.LocalStt</RootNamespace>
+    <AssemblyName>AudioParsing.LocalStt</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="1.13.8" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AudioParsing.Core\AudioParsing.Core.csproj" />
+  </ItemGroup>
+</Project>

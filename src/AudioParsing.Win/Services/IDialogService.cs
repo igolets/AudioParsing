@@ -12,4 +12,8 @@ public interface IDialogService
     public void ShowError(string message);
 
     public string? ShowOpenFileDialog(string? initialPath);
+
+    public string? ShowOpenFolderDialog(string? initialPath);
+
+    public bool ShowConfirmation(string message, string caption);
 }

@@ -104,6 +104,10 @@ internal sealed class FakeDialogService : IDialogService
 
     public string? OpenFileDialogResult { get; set; }
 
+    public string? OpenFolderDialogResult { get; set; }
+
+    public bool ConfirmResult { get; set; }
+
     public void ShowSettings() => SettingsShownCount++;
 
     public void ShowWarning(string message) => Warnings.Add(message);
@@ -111,4 +115,69 @@ internal sealed class FakeDialogService : IDialogService
     public void ShowError(string message) => Errors.Add(message);
 
     public string? ShowOpenFileDialog(string? initialPath) => OpenFileDialogResult;
+
+    public string? ShowOpenFolderDialog(string? initialPath) => OpenFolderDialogResult;
+
+    public bool ShowConfirmation(string message, string caption) => ConfirmResult;
+}
+
+internal sealed class FakeAudioTranscriber : IAudioTranscriber
+{
+    public FakeAudioTranscriber(string transcript = "fake transcript")
+    {
+        Transcript = transcript;
+    }
+
+    public string Transcript { get; set; }
+
+    public Exception? Failure { get; set; }
+
+    public string Name => "fake";
+
+    public List<string> ReceivedPaths { get; } = new();
+
+    public string? ReceivedLanguage { get; private set; }
+
+    public int CallCount { get; private set; }
+
+    public Task<string> TranscribeAsync(string audioFilePath, string? language, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(audioFilePath);
+
+        CallCount++;
+        ReceivedPaths.Add(audioFilePath);
+        ReceivedLanguage = language;
+        return Failure is not null
+            ? Task.FromException<string>(Failure)
+            : Task.FromResult(Transcript);
+    }
+}
+
+internal sealed class FakeSummaryGenerator : ISummaryGenerator
+{
+    public FakeSummaryGenerator(string summary = "fake summary\nKeywords: alpha")
+    {
+        Summary = summary;
+    }
+
+    public string Summary { get; set; }
+
+    public Exception? Failure { get; set; }
+
+    public string Name => "fake-summary";
+
+    public List<string> ReceivedTranscripts { get; } = new();
+
+    public int CallCount { get; private set; }
+
+    public Task<string> GenerateSummaryAsync(string transcript, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(transcript);
+
+        CallCount++;
+        ReceivedTranscripts.Add(transcript);
+        return Failure is not null
+            ? Task.FromException<string>(Failure)
+            : Task.FromResult(Summary);
+    }
 }
