@@ -57,10 +57,20 @@ public static class AppSettings
     /// Parses a summary backend name case-insensitively; unknown values fall back to
     /// <see cref="SummaryBackend.External"/>.
     /// </summary>
-    public static SummaryBackend ParseSummaryBackend(string? value) =>
-        string.Equals(value, "Local", StringComparison.OrdinalIgnoreCase)
-            ? SummaryBackend.Local
-            : SummaryBackend.External;
+    public static SummaryBackend ParseSummaryBackend(string? value)
+    {
+        if (string.Equals(value, "Local", StringComparison.OrdinalIgnoreCase))
+        {
+            return SummaryBackend.Local;
+        }
+
+        if (string.Equals(value, "Skip", StringComparison.OrdinalIgnoreCase))
+        {
+            return SummaryBackend.Skip;
+        }
+
+        return SummaryBackend.External;
+    }
 
     /// <summary>
     /// Returns the configured spoken language, or null when set to "auto" (parameter omitted).

@@ -66,13 +66,21 @@
                  IsIndeterminate="True"
                  Visibility="{Binding IsProcessing, Converter={StaticResource BoolToVis}}"/>
 
-    <!-- Drop zone (visible when idle) -->
+    <!-- Drop zone (visible when idle). Click opens the multi-select file dialog. -->
     <Border Grid.Row="2" Margin="16"
             BorderThickness="2"
             BorderBrush="{StaticResource AccentLightBrush}"
             Background="{StaticResource SurfaceBrush}"
             CornerRadius="10"
+            Cursor="Hand"
+            Focusable="True"
+            ToolTip="Нажмите, чтобы выбрать файлы"
             Visibility="{Binding IsDropZoneVisible, Converter={StaticResource BoolToVis}}">
+      <Border.InputBindings>
+        <MouseBinding MouseAction="LeftClick" Command="{Binding SelectFilesCommand}"/>
+        <KeyBinding Key="Enter" Command="{Binding SelectFilesCommand}"/>
+        <KeyBinding Key="Space" Command="{Binding SelectFilesCommand}"/>
+      </Border.InputBindings>
       <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
         <!-- Upload icon -->
         <Border Width="64" Height="64" CornerRadius="16"
@@ -95,6 +103,13 @@
                    HorizontalAlignment="Center"
                    TextAlignment="Center"
                    Margin="0,4,0,0"/>
+
+        <TextBlock Text="или нажмите, чтобы выбрать файлы"
+                   FontSize="13"
+                   Foreground="{StaticResource AccentBrush}"
+                   HorizontalAlignment="Center"
+                   TextAlignment="Center"
+                   Margin="0,8,0,0"/>
       </StackPanel>
     </Border>
 

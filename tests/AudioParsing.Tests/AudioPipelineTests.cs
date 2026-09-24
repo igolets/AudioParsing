@@ -374,6 +374,44 @@ public sealed class AudioPipelineTests
         }
     }
 
+    [Fact]
+    public async Task ProcessFolderWithSkippedSummaryWritesTranscriptOnly()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "h.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            FakeTranscriber transcriber = new();
+            FakeSummaryGenerator summarizer = new();
+            AudioPipeline pipeline = new(
+                transcriber,
+                TranscriptionBackend.External,
+                summarizer: null,
+                SummaryBackend.Skip,
+                @"C:\ffmpeg\ffmpeg.exe");
+            SyncProgress progress = new();
+
+            IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFolderAsync(root, progress: progress);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.False(single.Skipped);
+            Assert.True(single.Success);
+            Assert.Equal(1, transcriber.CallCount);
+            Assert.Equal(0, summarizer.CallCount);
+            string markdown = await File.ReadAllTextAsync(Path.ChangeExtension(audio, ".md"));
+            Assert.DoesNotContain("## Краткое содержание", markdown, StringComparison.Ordinal);
+            Assert.Contains("## Полный транскрипт", markdown, StringComparison.Ordinal);
+            Assert.Contains("local transcript", markdown, StringComparison.Ordinal);
+            Assert.DoesNotContain(PipelineStage.Summarizing, progress.Stages);
+            Assert.Contains(PipelineStage.Completed, progress.Stages);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static string? ResolveFfmpegPath()
     {
         try

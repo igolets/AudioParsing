@@ -67,4 +67,20 @@ public static class AudioFileFinder
     /// <summary>True for any supported media file (audio or video).</summary>
     public static bool IsAudioFile(string path) =>
         SupportedExtensions.Contains(Path.GetExtension(path)) || IsVideoFile(path);
+
+    /// <summary>
+    /// Builds a file-dialog filter string for all supported media files
+    /// (e.g. "Аудио и видео (*.mp3;*.mp4;...)|...|Все файлы (*.*)|*.*").
+    /// </summary>
+    public static string GetOpenFileDialogFilter()
+    {
+        List<string> patterns = SupportedExtensions
+            .Union(SupportedVideoExtensions, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static ext => ext, StringComparer.OrdinalIgnoreCase)
+            .Select(static ext => "*" + ext)
+            .ToList();
+
+        string all = string.Join(";", patterns);
+        return $"Аудио и видео ({all})|{all}|Все файлы (*.*)|*.*";
+    }
 }

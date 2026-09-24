@@ -65,6 +65,18 @@ public sealed class AudioFileFinderTests
     public void FindAudioFilesThrowsForMissingFolder() => Assert.Throws<DirectoryNotFoundException>(
         () => AudioFileFinder.FindAudioFiles(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"))));
 
+    [Fact]
+    public void GetOpenFileDialogFilterCoversSupportedExtensions()
+    {
+        string filter = AudioFileFinder.GetOpenFileDialogFilter();
+
+        Assert.StartsWith("Аудио и видео (", filter, StringComparison.Ordinal);
+        Assert.Contains("*.mp3", filter, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("*.mkv", filter, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("*.m2ts", filter, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Все файлы (*.*)|*.*", filter, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("song.mp3", true)]
     [InlineData("record.M4A", true)]

@@ -91,7 +91,8 @@ public sealed class SettingsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Selected summarization backend: "External" (RouterAI luna) or "Local" (GigaChat GGUF).
+    /// Selected summarization backend: "External" (RouterAI luna), "Local" (GigaChat GGUF)
+    /// or "Skip" (transcript only, no summary section).
     /// </summary>
     public string SummaryBackend
     {
@@ -197,9 +198,12 @@ public sealed class SettingsViewModel : ObservableObject
         TranscriptionBackend = AppSettings.ParseTranscriptionBackend(model.TranscriptionBackend) == AudioParsing.TranscriptionBackend.Local
             ? "Local"
             : "External";
-        SummaryBackend = AppSettings.ParseSummaryBackend(model.SummaryBackend) == AudioParsing.SummaryBackend.Local
-            ? "Local"
-            : "External";
+        SummaryBackend = AppSettings.ParseSummaryBackend(model.SummaryBackend) switch
+        {
+            AudioParsing.SummaryBackend.Local => "Local",
+            AudioParsing.SummaryBackend.Skip => "Skip",
+            _ => "External",
+        };
         Language = model.Language;
         GigaAmModelPath = model.GigaAm.ModelPath;
         GigaAmEncoderFileName = model.GigaAm.EncoderFileName;
@@ -216,6 +220,7 @@ public sealed class SettingsViewModel : ObservableObject
     {
         bool isLocal = TranscriptionBackend.Equals("Local", StringComparison.OrdinalIgnoreCase);
         bool isLocalSummary = SummaryBackend.Equals("Local", StringComparison.OrdinalIgnoreCase);
+        bool isSkippedSummary = SummaryBackend.Equals("Skip", StringComparison.OrdinalIgnoreCase);
 
         if (!isLocal && string.IsNullOrWhiteSpace(TranscriptionModel))
         {
@@ -223,7 +228,7 @@ public sealed class SettingsViewModel : ObservableObject
             return false;
         }
 
-        if (!isLocalSummary && string.IsNullOrWhiteSpace(SummaryModel))
+        if (!isLocalSummary && !isSkippedSummary && string.IsNullOrWhiteSpace(SummaryModel))
         {
             ValidationMessage = "Модель суммаризации не должна быть пустой.";
             return false;
@@ -287,7 +292,7 @@ public sealed class SettingsViewModel : ObservableObject
             TranscriptionModel = TranscriptionModel,
             SummaryModel = SummaryModel,
             TranscriptionBackend = isLocal ? "Local" : "External",
-            SummaryBackend = isLocalSummary ? "Local" : "External",
+            SummaryBackend = isLocalSummary ? "Local" : isSkippedSummary ? "Skip" : "External",
             Language = Language,
             GigaAm = new GigaAmSettings
             {

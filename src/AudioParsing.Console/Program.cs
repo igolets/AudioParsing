@@ -67,7 +67,7 @@ internal static class Program
         if (summaryBackendOverride is null && !string.IsNullOrWhiteSpace(ResolveOption(args, SummaryBackendFlag)))
         {
             await System.Console.Error.WriteLineAsync(
-                $"Unknown {SummaryBackendFlag} value. Expected 'external' or 'local'.").ConfigureAwait(false);
+                $"Unknown {SummaryBackendFlag} value. Expected 'external', 'local' or 'skip'.").ConfigureAwait(false);
             return 1;
         }
 
@@ -111,9 +111,11 @@ internal static class Program
             IAudioTranscriber transcriber = localTranscriber is not null
                 ? localTranscriber
                 : new RouterAiTranscriber(client!, model);
-            ISummaryGenerator summarizer = localSummary is not null
+            ISummaryGenerator? summarizer = localSummary is not null
                 ? new ChunkingSummaryGenerator(localSummary, gigaChat.ContextSize, reservedOutputTokens: 2048)
-                : new RouterAiSummaryGenerator(client!, summaryModel);
+                : summaryBackend == SummaryBackend.External
+                    ? new RouterAiSummaryGenerator(client!, summaryModel)
+                    : null;
             AudioPipeline pipeline = new(transcriber, backend, summarizer, summaryBackend, ffmpegPath, language);
             IReadOnlyList<AudioFileResult> results = await pipeline
                 .ProcessFolderAsync(folder, force)
@@ -250,6 +252,11 @@ internal static class Program
             return SummaryBackend.External;
         }
 
+        if (string.Equals(value.Trim(), "Skip", StringComparison.OrdinalIgnoreCase))
+        {
+            return SummaryBackend.Skip;
+        }
+
         return null;
     }
 
@@ -297,8 +304,9 @@ internal static class Program
             + "  --gigaam-model <path>  GigaAM-v3 model directory (local backend only)\n"
             + "  --download-gigaam   Download the GigaAM-v3 model from Hugging Face\n"
             + "                      (asks for confirmation, existing files are skipped)\n"
-            + "  --summary-backend <name>  Summarization backend: external (RouterAI luna, default)\n"
-            + "                      or local (on-device GigaChat GGUF)\n"
+            + "  --summary-backend <name>  Summarization backend: external (RouterAI luna, default),\n"
+            + "                      local (on-device GigaChat GGUF) or skip (transcript only,\n"
+            + "                      no summary section)"
             + "  --gigachat-model <path>  GigaChat GGUF file path (local summary only;\n"
             + "                      a directory gets the default file name appended)\n"
             + "  --download-gigachat Download the GigaChat GGUF from Hugging Face\n"

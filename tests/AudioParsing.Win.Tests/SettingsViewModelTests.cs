@@ -408,6 +408,43 @@ public sealed class SettingsViewModelTests
     }
 
     [Fact]
+    public void LoadPreservesSkipSummaryBackend()
+    {
+        FakeSettingsStore store = new(new AppSettingsModel { SummaryBackend = "Skip" });
+        SettingsViewModel viewModel = new(store, new FakeDialogService());
+
+        Assert.Equal("Skip", viewModel.SummaryBackend);
+    }
+
+    [Fact]
+    public void TrySavePersistsSkipSummaryWithoutSummaryModel()
+    {
+        string ffmpeg = Path.GetTempFileName();
+        try
+        {
+            FakeSettingsStore store = new(new AppSettingsModel());
+            SettingsViewModel viewModel = new(store, new FakeDialogService());
+            viewModel.FfmpegPath = ffmpeg;
+            viewModel.SummaryBackend = "Skip";
+            viewModel.SummaryModel = "  ";
+            bool? closed = null;
+            viewModel.CloseRequested += (sender, e) => closed = e.DialogResult;
+
+            bool saved = viewModel.TrySave();
+
+            Assert.True(saved);
+            Assert.Equal(1, store.SaveCallCount);
+            Assert.Equal("Skip", store.Model.SummaryBackend);
+            Assert.Null(viewModel.ValidationMessage);
+            Assert.Equal(true, closed);
+        }
+        finally
+        {
+            File.Delete(ffmpeg);
+        }
+    }
+
+    [Fact]
     public void TrySaveRejectsLocalSummaryWithMissingGguf()
     {
         string ffmpeg = Path.GetTempFileName();

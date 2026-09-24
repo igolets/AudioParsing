@@ -28,7 +28,8 @@ public sealed class AudioPipeline
 
     private readonly IAudioTranscriber _transcriber;
     private readonly TranscriptionBackend _backend;
-    private readonly ISummaryGenerator _summarizer;
+    private readonly ISummaryGenerator? _summarizer;
+    private readonly SummaryBackend _summaryBackend;
     private readonly string _ffmpegPath;
     private readonly string? _language;
 
@@ -66,19 +67,25 @@ public sealed class AudioPipeline
     public AudioPipeline(
         IAudioTranscriber transcriber,
         TranscriptionBackend backend,
-        ISummaryGenerator summarizer,
+        ISummaryGenerator? summarizer,
         SummaryBackend summaryBackend,
         string ffmpegPath,
         string? language = DefaultLanguage)
     {
         _transcriber = transcriber ?? throw new ArgumentNullException(nameof(transcriber));
-        _summarizer = summarizer ?? throw new ArgumentNullException(nameof(summarizer));
+        if (summaryBackend != SummaryBackend.Skip && summarizer is null)
+        {
+            throw new ArgumentNullException(nameof(summarizer));
+        }
+
         if (string.IsNullOrWhiteSpace(ffmpegPath))
         {
             throw new ArgumentException("ffmpeg path must not be empty.", nameof(ffmpegPath));
         }
 
         _backend = backend;
+        _summarizer = summarizer;
+        _summaryBackend = summaryBackend;
         _ffmpegPath = ffmpegPath;
         _language = language;
     }
@@ -172,19 +179,30 @@ public sealed class AudioPipeline
             string transcript = await _transcriber
                 .TranscribeAsync(transcriptionInput, _language, cancellationToken)
                 .ConfigureAwait(false);
-            progress?.Report(new PipelineProgress(audioPath, PipelineStage.Summarizing, $"Summarizing with {_summarizer.Name}."));
-            string summaryResponse = await _summarizer
-                .GenerateSummaryAsync(transcript, cancellationToken)
-                .ConfigureAwait(false);
-            (string summary, IReadOnlyList<string> keywords) =
-                MarkdownDocument.SplitSummaryAndKeywords(summaryResponse);
             string title = Path.GetFileNameWithoutExtension(audioPath);
-            string markdown = MarkdownDocument.Build(
-                title,
-                DateOnly.FromDateTime(DateTime.Today),
-                keywords,
-                summary,
-                transcript);
+            string markdown;
+            if (_summaryBackend == SummaryBackend.Skip)
+            {
+                markdown = MarkdownDocument.BuildTranscriptOnly(
+                    title,
+                    DateOnly.FromDateTime(DateTime.Today),
+                    transcript);
+            }
+            else
+            {
+                progress?.Report(new PipelineProgress(audioPath, PipelineStage.Summarizing, $"Summarizing with {_summarizer!.Name}."));
+                string summaryResponse = await _summarizer!
+                    .GenerateSummaryAsync(transcript, cancellationToken)
+                    .ConfigureAwait(false);
+                (string summary, IReadOnlyList<string> keywords) =
+                    MarkdownDocument.SplitSummaryAndKeywords(summaryResponse);
+                markdown = MarkdownDocument.Build(
+                    title,
+                    DateOnly.FromDateTime(DateTime.Today),
+                    keywords,
+                    summary,
+                    transcript);
+            }
             progress?.Report(new PipelineProgress(audioPath, PipelineStage.Writing, $"Writing {markdownPath}."));
             await File.WriteAllTextAsync(markdownPath, markdown, cancellationToken).ConfigureAwait(false);
             progress?.Report(new PipelineProgress(audioPath, PipelineStage.Completed, $"Done: {markdownPath}."));

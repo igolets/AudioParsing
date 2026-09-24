@@ -139,6 +139,77 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
+    public async Task SelectFilesProcessesPickedFiles()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string first = Path.Combine(root, "a.mp3");
+            string second = Path.Combine(root, "b.mp4");
+            await File.WriteAllBytesAsync(first, new byte[] { 1 });
+            await File.WriteAllBytesAsync(second, new byte[] { 2 });
+            FakePipelineRunner runner = new((files, progress, ct) =>
+                Task.FromResult<IReadOnlyList<AudioFileResult>>(Array.Empty<AudioFileResult>()));
+            FakeDialogService dialog = new() { OpenAudioFilesDialogResult = new[] { first, second } };
+            MainWindowViewModel viewModel = new(runner, dialog, TestLogger<MainWindowViewModel>.Instance);
+
+            await viewModel.SelectFilesAsync();
+
+            Assert.Equal(1, dialog.OpenAudioFilesDialogCallCount);
+            Assert.Equal(new[] { first, second }, runner.ReceivedFiles);
+            Assert.False(viewModel.IsDropZoneVisible);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
+    public async Task SelectFilesIgnoresCancelledDialog()
+    {
+        FakePipelineRunner runner = new((files, progress, ct) =>
+            Task.FromResult<IReadOnlyList<AudioFileResult>>(Array.Empty<AudioFileResult>()));
+        FakeDialogService dialog = new() { OpenAudioFilesDialogResult = null };
+        MainWindowViewModel viewModel = new(runner, dialog, TestLogger<MainWindowViewModel>.Instance);
+
+        await viewModel.SelectFilesAsync();
+
+        Assert.Equal(1, dialog.OpenAudioFilesDialogCallCount);
+        Assert.Equal(0, runner.CallCount);
+        Assert.True(viewModel.IsDropZoneVisible);
+    }
+
+    [Fact]
+    public async Task SelectFilesDeclinesWhileProcessing()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "a.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1 });
+            TaskCompletionSource<IReadOnlyList<AudioFileResult>> gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            FakePipelineRunner runner = new((files, progress, ct) => gate.Task);
+            FakeDialogService dialog = new() { OpenAudioFilesDialogResult = new[] { audio } };
+            MainWindowViewModel viewModel = new(runner, dialog, TestLogger<MainWindowViewModel>.Instance);
+            string[] paths = new[] { audio };
+
+            Task first = viewModel.ProcessDroppedFilesAsync(paths);
+            await viewModel.SelectFilesAsync();
+
+            Assert.Single(dialog.Warnings);
+            Assert.Equal(0, dialog.OpenAudioFilesDialogCallCount);
+            Assert.Equal(1, runner.CallCount);
+            gate.SetResult(Array.Empty<AudioFileResult>());
+            await first.ConfigureAwait(true);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
+    [Fact]
     public void OpenSettingsCommandShowsSettingsDialog()
     {
         FakePipelineRunner runner = new((files, progress, ct) =>

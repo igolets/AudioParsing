@@ -71,6 +71,19 @@ public sealed class DialogService : IDialogService
         return dialog.ShowDialog(Application.Current?.MainWindow) == true ? dialog.FileName : null;
     }
 
+    public IReadOnlyList<string>? ShowOpenAudioFilesDialog()
+    {
+        Microsoft.Win32.OpenFileDialog dialog = new()
+        {
+            Title = "Выберите аудио или видео файлы",
+            Filter = AudioFileFinder.GetOpenFileDialogFilter(),
+            CheckFileExists = true,
+            Multiselect = true,
+        };
+
+        return dialog.ShowDialog(Application.Current?.MainWindow) == true ? dialog.FileNames : null;
+    }
+
     public string? ShowOpenFolderDialog(string? initialPath)
     {
         Microsoft.Win32.OpenFolderDialog dialog = new()

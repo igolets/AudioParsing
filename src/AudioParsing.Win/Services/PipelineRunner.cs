@@ -62,9 +62,11 @@ public sealed class PipelineRunner : IPipelineRunner
         IAudioTranscriber transcriber = localTranscriber is not null
             ? localTranscriber
             : new RouterAiTranscriber(client!, settings.TranscriptionModel);
-        ISummaryGenerator summarizer = localSummary is not null
+        ISummaryGenerator? summarizer = localSummary is not null
             ? new ChunkingSummaryGenerator(localSummary, settings.GigaChat.ContextSize, reservedOutputTokens: 2048)
-            : new RouterAiSummaryGenerator(client!, settings.SummaryModel);
+            : summary == SummaryBackend.External
+                ? new RouterAiSummaryGenerator(client!, settings.SummaryModel)
+                : null;
         AudioPipeline pipeline = new(transcriber, backend, summarizer, summary, settings.FfmpegPath, language);
         return await pipeline
             .ProcessFilesAsync(files, force: false, progress, cancellationToken)

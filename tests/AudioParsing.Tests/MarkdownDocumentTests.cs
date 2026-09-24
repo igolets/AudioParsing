@@ -79,4 +79,20 @@ public sealed class MarkdownDocumentTests
 
         Assert.Contains("title: \"Say \\\"hi\\\"\"", markdown, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void BuildTranscriptOnlyOmitsSummarySection()
+    {
+        string markdown = MarkdownDocument.BuildTranscriptOnly(
+            "Lecture 1",
+            new DateOnly(2026, 9, 24),
+            "Full verbatim transcript");
+
+        Assert.Contains("title: \"Lecture 1\"", markdown, StringComparison.Ordinal);
+        Assert.Contains("date: 2026-09-24", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("Краткое содержание", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("keywords:", markdown, StringComparison.Ordinal);
+        Assert.Contains("## Полный транскрипт", markdown, StringComparison.Ordinal);
+        Assert.Contains("Full verbatim transcript", markdown, StringComparison.Ordinal);
+    }
 }

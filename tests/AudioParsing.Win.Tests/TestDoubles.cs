@@ -106,6 +106,10 @@ internal sealed class FakeDialogService : IDialogService
 
     public string? OpenFolderDialogResult { get; set; }
 
+    public IReadOnlyList<string>? OpenAudioFilesDialogResult { get; set; }
+
+    public int OpenAudioFilesDialogCallCount { get; private set; }
+
     public bool ConfirmResult { get; set; }
 
     public void ShowSettings() => SettingsShownCount++;
@@ -117,6 +121,12 @@ internal sealed class FakeDialogService : IDialogService
     public string? ShowOpenFileDialog(string? initialPath) => OpenFileDialogResult;
 
     public string? ShowOpenFolderDialog(string? initialPath) => OpenFolderDialogResult;
+
+    public IReadOnlyList<string>? ShowOpenAudioFilesDialog()
+    {
+        OpenAudioFilesDialogCallCount++;
+        return OpenAudioFilesDialogResult;
+    }
 
     public bool ShowConfirmation(string message, string caption) => ConfirmResult;
 }

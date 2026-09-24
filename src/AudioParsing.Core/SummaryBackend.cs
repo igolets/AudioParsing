@@ -8,4 +8,7 @@ public enum SummaryBackend
 
     /// <summary>On-device GigaChat GGUF via LLamaSharp.</summary>
     Local,
+
+    /// <summary>No summarization; output transcript only.</summary>
+    Skip,
 }

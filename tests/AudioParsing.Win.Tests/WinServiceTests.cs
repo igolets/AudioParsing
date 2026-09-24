@@ -476,6 +476,45 @@ public sealed class PipelineRunnerTests
         }
     }
 
+    [Fact]
+    public async Task ProcessAsyncWithSkippedSummaryWritesTranscriptOnly()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "a.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            using StubHandler handler = new();
+            using HttpClient httpClient = new(handler);
+            Uri baseUri = new("https://example.test/v1");
+            FakeSettingsStore store = new(new AppSettingsModel
+            {
+                FfmpegPath = @"C:\ffmpeg\ffmpeg.exe",
+                TranscriptionBackend = "External",
+                SummaryBackend = "Skip",
+            });
+            PipelineRunner runner = new(
+                store,
+                new FakeApiKeyProvider("test-key"),
+                key => new RouterAiClient(key, httpClient, baseUri));
+            string[] files = new[] { audio };
+
+            IReadOnlyList<AudioFileResult> results = await runner.ProcessAsync(files, null, CancellationToken.None);
+
+            AudioFileResult single = Assert.Single(results);
+            Assert.True(single.Success);
+            Assert.Equal(1, handler.TranscriptionCallCount);
+            Assert.Equal(0, handler.ChatCallCount);
+            string markdown = await File.ReadAllTextAsync(Path.ChangeExtension(audio, ".md"));
+            Assert.DoesNotContain("## Краткое содержание", markdown, StringComparison.Ordinal);
+            Assert.Contains("## Полный транскрипт", markdown, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static async Task WaitForProgressAsync(Func<bool> ready)
     {
         for (int i = 0; i < 200 && !ready(); i++)

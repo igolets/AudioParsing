@@ -28,6 +28,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _log = log ?? throw new ArgumentNullException(nameof(log));
         OpenSettingsCommand = new RelayCommand(_ => _dialog.ShowSettings());
         CancelCommand = new RelayCommand(_ => _cts?.Cancel());
+        SelectFilesCommand = new AsyncRelayCommand(SelectFilesAsync);
     }
 
     public ObservableCollection<LogEntryViewModel> Log { get; } = new();
@@ -55,6 +56,29 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public ICommand OpenSettingsCommand { get; }
 
     public ICommand CancelCommand { get; }
+
+    public ICommand SelectFilesCommand { get; }
+
+    /// <summary>
+    /// Opens the multi-select file dialog and processes the picked files.
+    /// Cancellation (null) is a no-op; an empty pick keeps the drop zone visible.
+    /// </summary>
+    public async Task SelectFilesAsync()
+    {
+        if (IsProcessing)
+        {
+            _dialog.ShowWarning("Дождитесь завершения текущей обработки.");
+            return;
+        }
+
+        IReadOnlyList<string>? picked = _dialog.ShowOpenAudioFilesDialog();
+        if (picked is null)
+        {
+            return;
+        }
+
+        await ProcessDroppedFilesAsync(picked).ConfigureAwait(true);
+    }
 
     /// <summary>
     /// Filters <paramref name="paths"/> to supported audio files and runs them through

@@ -15,5 +15,11 @@ public interface IDialogService
 
     public string? ShowOpenFolderDialog(string? initialPath);
 
+    /// <summary>
+    /// Shows a multi-select file dialog filtered to supported audio/video files.
+    /// Returns <c>null</c> when the user cancels.
+    /// </summary>
+    public IReadOnlyList<string>? ShowOpenAudioFilesDialog();
+
     public bool ShowConfirmation(string message, string caption);
 }

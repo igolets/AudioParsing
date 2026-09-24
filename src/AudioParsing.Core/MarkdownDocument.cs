@@ -106,6 +106,38 @@ public static class MarkdownDocument
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Assembles a transcript-only Markdown document with YAML frontmatter and
+    /// the verbatim transcript section (no summary section). Used when
+    /// <see cref="SummaryBackend.Skip"/> is selected.
+    /// </summary>
+    public static string BuildTranscriptOnly(
+        string title,
+        DateOnly date,
+        string transcript)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            throw new ArgumentException("Title must not be empty.", nameof(title));
+        }
+
+        if (string.IsNullOrWhiteSpace(transcript))
+        {
+            throw new ArgumentException("Transcript must not be empty.", nameof(transcript));
+        }
+
+        StringBuilder builder = new();
+        builder.AppendLine("---");
+        builder.Append("title: \"").Append(EscapeYaml(title)).AppendLine("\"");
+        builder.Append("date: ").AppendLine(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        builder.AppendLine("---");
+        builder.AppendLine();
+        builder.AppendLine("## Полный транскрипт");
+        builder.AppendLine();
+        builder.AppendLine(transcript.Trim());
+        return builder.ToString();
+    }
+
     private static string EscapeYaml(string value) =>
         value.Replace(@"\", @"\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
 }
