@@ -117,8 +117,12 @@ internal static class Program
                     ? new RouterAiSummaryGenerator(client!, summaryModel)
                     : null;
             AudioPipeline pipeline = new(transcriber, backend, summarizer, summaryBackend, ffmpegPath, language);
+            // Console has no SynchronizationContext, so Progress<T> invokes on a thread-pool
+            // thread; System.Console output is synchronized internally, no extra lock needed.
+            Progress<PipelineProgress> progress = new(p =>
+                System.Console.Out.WriteLine($"[{p.Stage}] {Path.GetFileName(p.AudioPath)}: {p.Message}"));
             IReadOnlyList<AudioFileResult> results = await pipeline
-                .ProcessFolderAsync(folder, force)
+                .ProcessFolderAsync(folder, force, progress)
                 .ConfigureAwait(false);
 
             if (results.Count == 0)
@@ -492,7 +496,7 @@ internal static class Program
         try
         {
             using FileStream stream = File.OpenRead(path);
-            using JsonDocument document = JsonDocument.Parse(stream);
+            using JsonDocument document = JsonDocument.Parse(stream, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip });
             return document.RootElement.TryGetProperty("SummaryBackend", out _);
         }
         catch (JsonException)

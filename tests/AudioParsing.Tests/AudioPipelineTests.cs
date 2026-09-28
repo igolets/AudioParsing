@@ -496,7 +496,7 @@ public sealed class AudioPipelineTests
 
         public int CallCount { get; private set; }
 
-        public Task<string> TranscribeAsync(string audioFilePath, string? language, CancellationToken cancellationToken)
+        public Task<string> TranscribeAsync(string audioFilePath, string? language, IProgress<PipelineProgress>? progress = null, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(audioFilePath);
 

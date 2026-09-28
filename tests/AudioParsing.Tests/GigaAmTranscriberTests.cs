@@ -125,4 +125,26 @@ public sealed class GigaAmTranscriberTests
         Directory.CreateDirectory(path);
         return path;
     }
+
+    [Fact]
+    public void SplitSamplesChunksLongAudioWithoutLoss()
+    {
+        float[] samples = Enumerable.Range(0, GigaAmTranscriber.MaxSamplesPerDecode + 10)
+            .Select(i => (float)i)
+            .ToArray();
+
+        List<float[]> chunks = GigaAmTranscriber.SplitSamples(samples, GigaAmTranscriber.MaxSamplesPerDecode).ToList();
+
+        Assert.Equal(2, chunks.Count);
+        Assert.Equal(GigaAmTranscriber.MaxSamplesPerDecode, chunks[0].Length);
+        Assert.Equal(10, chunks[1].Length);
+        Assert.Equal(samples, chunks.SelectMany(c => c).ToArray());
+    }
+
+    [Fact]
+    public void SplitSamplesRejectsNonPositiveChunkSize()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => GigaAmTranscriber.SplitSamples(new float[10], 0).ToList());
+    }
 }

@@ -17,6 +17,8 @@ public enum PipelineStage
 
 /// <summary>
 /// Per-file progress event pushed via <see cref="IProgress{T}"/>.
-/// The Win shell renders these; the console ignores them (passes <c>null</c>).
+/// Both hosts render these: the Win shell appends log lines, the console writes
+/// progress lines to stdout. Long local transcriptions report per-chunk
+/// (processed/total minutes) so multi-hour files don't look stuck.
 /// </summary>
 public sealed record PipelineProgress(string AudioPath, PipelineStage Stage, string Message);

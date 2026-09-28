@@ -177,7 +177,7 @@ public sealed class AudioPipeline
 
             progress?.Report(new PipelineProgress(audioPath, PipelineStage.Transcribing, $"Transcribing with {_transcriber.Name}."));
             string transcript = await _transcriber
-                .TranscribeAsync(transcriptionInput, _language, cancellationToken)
+                .TranscribeAsync(transcriptionInput, _language, progress, cancellationToken)
                 .ConfigureAwait(false);
             string title = Path.GetFileNameWithoutExtension(audioPath);
             string markdown;

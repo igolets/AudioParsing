@@ -125,6 +125,39 @@ public sealed class AudioPipelineProgressTests
         }
     }
 
+    [Fact]
+    public async Task ProcessFilesAsyncForwardsProgressToTranscriberForChunkUpdates()
+    {
+        string root = CreateTempDirectory();
+        try
+        {
+            string audio = Path.Combine(root, "a.mp3");
+            await File.WriteAllBytesAsync(audio, new byte[] { 1, 2, 3 });
+            ChunkReportingTranscriber transcriber = new();
+            AudioPipeline pipeline = new(
+                transcriber,
+                TranscriptionBackend.External,
+                summarizer: null,
+                summaryBackend: SummaryBackend.Skip,
+                ffmpegPath: @"C:\ffmpeg\ffmpeg.exe");
+            List<PipelineProgress> events = new();
+            SyncProgress progress = new(events.Add);
+
+            IReadOnlyList<AudioFileResult> results = await pipeline.ProcessFilesAsync(new[] { audio }, progress: progress);
+
+            Assert.True(Assert.Single(results).Success);
+            Assert.Same(progress, transcriber.ReceivedProgress);
+            Assert.Contains(
+                events,
+                static e => e.Stage == PipelineStage.Transcribing
+                    && e.Message.Contains("1.0/2.0 min", StringComparison.Ordinal));
+        }
+        finally
+        {
+            Directory.Delete(root, true);
+        }
+    }
+
     private static string CreateTempDirectory()
     {
         string path = Path.Combine(Path.GetTempPath(), $"audioparsing-progress-{Guid.NewGuid():N}");
@@ -142,6 +175,29 @@ public sealed class AudioPipelineProgressTests
         }
 
         public void Report(PipelineProgress value) => _onReport(value);
+    }
+
+    private sealed class ChunkReportingTranscriber : IAudioTranscriber
+    {
+        public string Name => "fake-chunks";
+
+        public IProgress<PipelineProgress>? ReceivedProgress { get; private set; }
+
+        public Task<string> TranscribeAsync(
+            string audioFilePath,
+            string? language,
+            IProgress<PipelineProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(audioFilePath);
+
+            ReceivedProgress = progress;
+            progress?.Report(new PipelineProgress(
+                audioFilePath,
+                PipelineStage.Transcribing,
+                "Transcribing with fake-chunks: 1.0/2.0 min (chunk 1/2)."));
+            return Task.FromResult("chunked transcript");
+        }
     }
 
     private sealed class CountingHandler : HttpMessageHandler

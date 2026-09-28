@@ -31,10 +31,19 @@ public sealed class GigaAmTranscriber : IAudioTranscriber, IDisposable
     /// <inheritdoc />
     public string Name => "GigaAM-v3 (local)";
 
+    /// <summary>
+    /// Maximum audio window fed to a single <c>Decode</c> call (30 s at 16 kHz).
+    /// The transducer encoder uses full-sequence self-attention, so decoding a
+    /// 90-minute recording in one go blows up the attention matrix and crashes
+    /// onnxruntime (BroadcastIterator axis error → SEHException). Public for tests.
+    /// </summary>
+    public const int MaxSamplesPerDecode = WavReader.ExpectedSampleRate * 30;
+
     /// <inheritdoc />
     public Task<string> TranscribeAsync(
         string audioFilePath,
         string? language,
+        IProgress<PipelineProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(audioFilePath))
@@ -48,7 +57,10 @@ public sealed class GigaAmTranscriber : IAudioTranscriber, IDisposable
         }
 
         // The local backend ignores the language: GigaAM-v3 is a Russian model.
-        return Task.Run(() => TranscribeCore(audioFilePath, cancellationToken), cancellationToken);
+        // Capture the progress sink explicitly: Task.Run does not flow the caller's
+        // SynchronizationContext-free Progress<T> semantics issue, but passing it as
+        // state keeps the callback target obvious.
+        return Task.Run(() => TranscribeCore(audioFilePath, cancellationToken, progress), cancellationToken);
     }
 
     /// <summary>
@@ -118,24 +130,77 @@ public sealed class GigaAmTranscriber : IAudioTranscriber, IDisposable
         return fullPath;
     }
 
-    private string TranscribeCore(string audioFilePath, CancellationToken cancellationToken)
+    /// <summary>
+    /// Splits <paramref name="samples"/> into non-overlapping windows of at most
+    /// <paramref name="chunkSize"/> samples. Pure slicing, no native calls, so it is unit-testable.
+    /// </summary>
+    public static IEnumerable<float[]> SplitSamples(float[] samples, int chunkSize)
+    {
+        ArgumentNullException.ThrowIfNull(samples);
+        if (chunkSize <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(chunkSize), "Chunk size must be positive.");
+        }
+
+        for (int offset = 0; offset < samples.Length; offset += chunkSize)
+        {
+            int length = Math.Min(chunkSize, samples.Length - offset);
+            float[] chunk = new float[length];
+            Array.Copy(samples, offset, chunk, 0, length);
+            yield return chunk;
+        }
+    }
+
+    private string TranscribeCore(string audioFilePath, CancellationToken cancellationToken, IProgress<PipelineProgress>? progress = null)
     {
         (int sampleRate, float[] samples) = WavReader.ReadMono(audioFilePath);
         cancellationToken.ThrowIfCancellationRequested();
 
-        using OfflineStream stream = _recognizer.Value.CreateStream();
-        stream.AcceptWaveform(sampleRate, samples);
-        cancellationToken.ThrowIfCancellationRequested();
+        List<float[]> chunks = SplitSamples(samples, MaxSamplesPerDecode).ToList();
+        double totalMinutes = samples.Length / (double)WavReader.ExpectedSampleRate / 60.0;
 
-        _recognizer.Value.Decode(stream);
-        cancellationToken.ThrowIfCancellationRequested();
+        List<string> parts = new(chunks.Count);
+        for (int i = 0; i < chunks.Count; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            parts.Add(DecodeChunk(chunks[i], sampleRate, audioFilePath, cancellationToken));
+            double doneMinutes = Math.Min(
+                totalMinutes,
+                (i + 1) * MaxSamplesPerDecode / (double)WavReader.ExpectedSampleRate / 60.0);
+            progress?.Report(new PipelineProgress(
+                audioFilePath,
+                PipelineStage.Transcribing,
+                $"Transcribing with {Name}: {doneMinutes:F1}/{totalMinutes:F1} min (chunk {i + 1}/{chunks.Count})."));
+        }
 
-        string? text = stream.Result?.Text;
+        string text = string.Join(" ", parts.Where(p => !string.IsNullOrWhiteSpace(p))).Trim();
         if (string.IsNullOrWhiteSpace(text))
         {
             throw new InvalidOperationException($"GigaAM returned an empty transcription for: {audioFilePath}");
         }
 
         return text;
+    }
+
+    private string DecodeChunk(float[] chunk, int sampleRate, string audioFilePath, CancellationToken cancellationToken)
+    {
+        using OfflineStream stream = _recognizer.Value.CreateStream();
+        stream.AcceptWaveform(sampleRate, chunk);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            _recognizer.Value.Decode(stream);
+        }
+        catch (System.Runtime.InteropServices.SEHException ex)
+        {
+            throw new InvalidOperationException(
+                $"GigaAM native decode failed for: {audioFilePath}. "
+                + "The model file set may be corrupt or incomplete.",
+                ex);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return stream.Result?.Text?.Trim() ?? string.Empty;
     }
 }

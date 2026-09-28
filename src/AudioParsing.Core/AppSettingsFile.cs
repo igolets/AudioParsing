@@ -65,6 +65,11 @@ public static class AppSettingsFile
 
     private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
+    private static readonly System.Text.Json.JsonDocumentOptions DocumentOptions = new()
+    {
+        CommentHandling = JsonCommentHandling.Skip,
+    };
+
     /// <summary>
     /// Resolves the settings path: <paramref name="overridePath"/> when given,
     /// otherwise the file next to the app, falling back to the current directory.
@@ -100,7 +105,7 @@ public static class AppSettingsFile
         try
         {
             using FileStream stream = File.OpenRead(resolved);
-            using JsonDocument document = JsonDocument.Parse(stream);
+            using JsonDocument document = JsonDocument.Parse(stream, DocumentOptions);
             JsonElement root = document.RootElement;
             return new AppSettingsModel
             {
@@ -143,6 +148,9 @@ public static class AppSettingsFile
         }
 
         string payload = JsonSerializer.Serialize(model, SerializerOptions);
+        payload = "// TranscriptionBackend: \"External\" (RouterAI Whisper, default) | \"Local\" (on-device GigaAM-v3)\n"
+            + "// SummaryBackend: \"External\" (RouterAI luna, default) | \"Local\" (on-device GigaChat GGUF) | \"Skip\" (transcript only)\n"
+            + payload;
         string tempPath = resolved + $".{Guid.NewGuid():N}.tmp";
         try
         {

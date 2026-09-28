@@ -413,4 +413,41 @@ public sealed class AppSettingsTests
             File.Delete(settings);
         }
     }
+
+    [Fact]
+    public void LoadSkipsCommentLines()
+    {
+        string settings = Path.Combine(Path.GetTempPath(), $"appsettings-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(
+                settings,
+                "// TranscriptionBackend: \"External\" | \"Local\"\n"
+                + "{ \"TranscriptionBackend\": \"Local\" }");
+
+            Assert.Equal(TranscriptionBackend.Local, AppSettings.GetTranscriptionBackend(settings));
+        }
+        finally
+        {
+            File.Delete(settings);
+        }
+    }
+
+    [Fact]
+    public void SavePreservesBackendGuidanceAndReloads()
+    {
+        string settings = Path.Combine(Path.GetTempPath(), $"appsettings-{Guid.NewGuid():N}.json");
+        try
+        {
+            AppSettingsFile.Save(new AppSettingsModel { TranscriptionBackend = "Local" }, settings);
+            string payload = File.ReadAllText(settings);
+
+            Assert.Contains("TranscriptionBackend", payload, StringComparison.Ordinal);
+            Assert.Equal(TranscriptionBackend.Local, AppSettings.GetTranscriptionBackend(settings));
+        }
+        finally
+        {
+            File.Delete(settings);
+        }
+    }
 }

@@ -9,9 +9,13 @@ public interface IAudioTranscriber
     /// <summary>
     /// Transcribes <paramref name="audioFilePath"/> (already preprocessed for this backend).
     /// <paramref name="language"/> may be null ("auto"); the local backend ignores it.
+    /// Implementations that process audio in chunks (e.g. the local GigaAM backend)
+    /// report fine-grained progress via <paramref name="progress"/>; single-shot
+    /// backends may ignore it.
     /// </summary>
     public Task<string> TranscribeAsync(
         string audioFilePath,
         string? language,
+        IProgress<PipelineProgress>? progress = null,
         CancellationToken cancellationToken = default);
 }

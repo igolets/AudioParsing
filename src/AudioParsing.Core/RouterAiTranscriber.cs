@@ -28,6 +28,7 @@ public sealed class RouterAiTranscriber : IAudioTranscriber
     public Task<string> TranscribeAsync(
         string audioFilePath,
         string? language,
+        IProgress<PipelineProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
         _client.TranscribeAsync(audioFilePath, _model, language, cancellationToken);
 }
